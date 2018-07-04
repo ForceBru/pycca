@@ -27,8 +27,10 @@ class Code(object):
     
     def compile(self, symbols):
         code = self.code
+        #print(f'replacements: "{self.replacements}"')
         for i, expr, packing in self.replacements:
             val = eval(expr, symbols)
+            #print(f'compile -> expr="{expr}" val="{val}" packing="{packing}"')
             val = struct.pack(packing, val)
             code = code[:i] + val + code[i+len(val):]
         return code

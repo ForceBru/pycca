@@ -4,6 +4,8 @@ import collections, struct
 
 from .instruction import Instruction, RelBranchInstruction
 
+from .instructions_new import *
+
 
 #   Procedure management instructions
 #----------------------------------------
@@ -33,7 +35,7 @@ class push(Instruction):
         ('r32',): ['50+rd', 'o', False, True],
         ('r64',): ['50+rd', 'o', True, False],
         ('imm8',): ['6a ib', 'i', True, True],
-        #('imm16',): ['68 iw', 'i', True, True],  # gnu as does not use this
+        ('imm16',): ['68 iw', 'i', True, True],  # gnu as does not use this
         ('imm32',): ['68 id', 'i', True, True],
     }
         
@@ -1580,17 +1582,18 @@ class jmp(RelBranchInstruction):
         RelBranchInstruction.__init__(self, addr)
 
 
-def _jcc(name, opcode, doc):
+def _jcc(name, opcodes, doc):
     """Create a jcc instruction class.
     """
+      
     modes = {
-        ('rel8',): [opcode, 'i', True, True],
-        ('rel16',): [opcode, 'i', False, True],
-        ('rel32',): [opcode, 'i', True, True],
+        ('rel8',): [opcodes[0], 'i', True, True],
+        ('rel16',): [opcodes[1], 'i', False, True],
+        ('rel32',): [opcodes[1], 'i', True, True],
     }
 
     op_enc = {
-        'i': ['imm32'],
+        'i': ['imm8/16/32'],
     }
 
     d = " Accepts an immediate address relative to the current instruction."
@@ -1601,21 +1604,21 @@ def _jcc(name, opcode, doc):
 
 ja   = _jcc('ja',   '0f87', """Jump near if above (CF=0 and ZF=0).""")
 jae  = _jcc('jae',  '0f83', """Jump near if above or equal (CF=0).""")
-jb   = _jcc('jb',   '0f82', """Jump near if below (CF=1).""")
+jb   = _jcc('jb',   ['72', '0f82', '0f82'], """Jump near if below (CF=1).""")
 jbe  = _jcc('jbe',  '0f86', """Jump near if below or equal (CF=1 or ZF=1).""")
 jc   = _jcc('jc',   '0f82', """Jump near if carry (CF=1).""")
-je   = _jcc('je',   '0f84', """Jump near if equal (ZF=1).""")
+je   = _jcc('je',   ['74', '0f84'], """Jump near if equal (ZF=1).""")
 jz   = _jcc('jz',   '0f84', """Jump near if 0 (ZF=1).""")
 jg   = _jcc('jg',   '0f8f', """Jump near if greater (ZF=0 and SF=OF).""")
 jge  = _jcc('jge',  '0f8d', """Jump near if greater or equal (SF=OF).""")
-jl   = _jcc('jl',   '0f8c', """Jump near if less (SF≠ OF).""")
+jl   = _jcc('jl',   ['7c', '0f8c'], """Jump near if less (SF≠ OF).""")
 jle  = _jcc('jle',  '0f8e', """Jump near if less or equal (ZF=1 or SF≠ OF).""")
 jna  = _jcc('jna',  '0f86', """Jump near if not above (CF=1 or ZF=1).""")
 jnae = _jcc('jnae', '0f82', """Jump near if not above or equal (CF=1).""")
 jnb  = _jcc('jnb',  '0f83', """Jump near if not below (CF=0).""")
 jnbe = _jcc('jnbe', '0f87', """Jump near if not below or equal (CF=0 and ZF=0).""")
 jnc  = _jcc('jnc',  '0f83', """Jump near if not carry (CF=0).""")
-jne  = _jcc('jne',  '0f85', """Jump near if not equal (ZF=0).""")
+jne  = _jcc('jne',  ['75', '0f85'], """Jump near if not equal (ZF=0).""")
 jng  = _jcc('jng',  '0f8e', """Jump near if not greater (ZF=1 or SF≠ OF).""")
 jnge = _jcc('jnge', '0f8c', """Jump near if not greater or equal (SF ≠ OF).""")
 jnl  = _jcc('jnl',  '0f8d', """Jump near if not less (SF=OF).""")

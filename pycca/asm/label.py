@@ -20,7 +20,7 @@ class Label(object):
         return 0
         
     def __str__(self):
-        return ':' + self.name
+        return self.name + ':'
         
     def compile(self, symbols):
         return ''

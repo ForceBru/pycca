@@ -49,6 +49,8 @@ if sys.maxsize > 2**32:
     ARCH = 64
 else:
     ARCH = 32
+    
+ARCH = 32
 
 from .instructions import *
 from .register import *

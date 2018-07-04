@@ -25,6 +25,7 @@ class Instruction(object):
         self.args = []
         for arg in args:
             if isinstance(arg, list):
+                #print(f"\tinstruction.Instruction.__init__() -> about to create a fucking pointer")
                 arg = Pointer(arg)
             #elif isinstance(arg, str):
                 #try:
@@ -184,6 +185,9 @@ class Instruction(object):
         sig = []
         clean_args = []
         for arg in self.args:
+            #if isinstance(arg, Label):
+                #arg = arg.__add__(0)
+
             if isinstance(arg, Register):
                 arg.check_arch()
                 if arg.name.startswith('xmm'):
@@ -470,6 +474,9 @@ class Instruction(object):
         prefixes = []
         rex_byt = 0
         opcode_reg = None  # register code embedded in opcode
+
+        #print('instruction.Instruction.parse_operands() -> clean_args', clean_args)
+
         for i,arg in enumerate(clean_args):
             # look up encoding for this operand
             enc = operand_enc[mode[1]][i]

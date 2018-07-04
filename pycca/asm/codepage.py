@@ -47,6 +47,9 @@ class CodePage(object):
             # get the page address
             buf = (ctypes.c_char * code_size).from_buffer(self.page)
             self.page_addr = ctypes.addressof(buf)
+            
+        # WARNING: all of this is BS because it sets self.page_addr to a huge 64-bit number, this doesn't work for PyVM!
+        self.page_addr = 0
         
         # Compile machine code and write to the page.
         code = self.compile(asm)
@@ -92,9 +95,12 @@ class CodePage(object):
                 continue
             
             if isinstance(cmd, Instruction):
+                #print(f'processing instruction {cmd}: {cmd.code}')
                 cmd = cmd.code
                 
             if isinstance(cmd, Code):
+                #print(f'\arrived at some BS\nsymbols: {symbols}')
+                
                 # Make some special symbols available when resolving
                 # expressions:
                 symbols['instr_addr'] = self.page_addr + len(code)
@@ -111,13 +117,30 @@ class CodePage(object):
         """
         code = ''
         ptr = 0
+        indent = ''
         for instr in self.asm:
             hex = ''
+            
             if isinstance(instr, Instruction):
-                for c in bytearray(instr.code):
-                    hex += '%02x' % c
-            code += '0x%04x: %s%s%s\n' % (ptr, hex, ' '*(40-len(hex)), instr)
-            ptr += len(hex)/2
+                _instr = instr.code if isinstance(instr.code, Code) else instr
+                  
+                hex = ''.join(f'{b:02x}' for b in _instr.code)
+            elif isinstance(instr, bytes): # just raw data
+                if not instr: continue
+                hex = ''.join(f'{b:02x}' for b in instr)
+              
+            pad = ' ' * (40 - len(hex))
+            
+            if isinstance(instr, Label):
+              if indent: indent = ''
+              
+            code += f'0x{ptr:04x}: {hex}{pad}{indent}{instr}\n'
+            
+            
+            if isinstance(instr, Label):
+              indent = ' ' * 2
+            
+            ptr += len(hex)//2
         return code
 
 

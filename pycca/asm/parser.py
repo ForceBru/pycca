@@ -9,6 +9,26 @@ for name in dir(register):
     obj = getattr(register, name)
     if isinstance(obj, register.Register):
         _eval_ns[name] = obj
+      
+commands = {
+    '.byte': lambda *op: bytes(map(int, op)),
+    '.p2align': lambda a, b=None, c=None: bytes([int(b, 16)] * int(a)),
+    '.asciz': lambda op: bytes(eval(op), 'ascii') + b'\0'
+}
+
+def process_command(match):
+  cmd, args = match.groups()
+  cmd = cmd.strip()
+  args = args.strip() if args else None
+  
+  try:
+    result = commands[cmd](*args.split(','))
+    #print(f'\tGot assembler command: {cmd}({args.split(",")}) => {result}')
+  except KeyError:
+    result = b''
+    #print(f'[WARN] command "{cmd}" not supported')
+  
+  return result
 
 
 def parse_asm(asm, namespace=None):
@@ -59,6 +79,8 @@ def parse_asm(asm, namespace=None):
             continue
 
         clean.append((lineno, line, origline))
+
+    #print(clean)
         
     # second pass: generate instructions
     for line in clean:
@@ -68,9 +90,17 @@ def parse_asm(asm, namespace=None):
         else:
             lineno, line, origline = line
         
-        m = re.match(r'([a-zA-Z_][a-zA-Z0-9_]*)( .*)?$', line)
+        m = re.match(r'([a-zA-Z_][a-zA-Z0-9_]*)([ \t].*)?$', line)
         if m is None:
-            raise SyntaxError('Expected instruction mnemonic on assembly line %d:'
+            # check if it's an instruction for this program (starts with a literal dot)
+            m2 = re.match(r'(\.[a-zA-Z_][a-zA-Z0-9_]*)([ \t].*)?$', line)
+            
+            if m2 is not None:
+              data = process_command(m2)
+              code.append(data)
+              continue
+            
+            raise SyntaxError('Expected instruction mnemonic or assembler command on assembly line %d:'
                               ' "%s"' % (lineno, origline))
         
         mnem, ops = m.groups()
@@ -87,17 +117,34 @@ def parse_asm(asm, namespace=None):
         args = []
         if ops is not None:
             ops = ops.split(',')
-            for j,op in enumerate(ops):
+            #if mnem == 'lea':
+                #print(f'{mnem} {ops}')
+            for j, op in enumerate(ops):
                 op = op.strip()
                 
                 # parse pointer size
                 m = re.match(r'((byte|word|dword|qword)\s+ptr )?(.*)', op)
                 _, ptype, op = m.groups()
+
+                try:
+                    ev = eval_ns[op]
+                except KeyError:
+                    ev = op
+
+                #if mnem == 'lea':
+                    #print(f'\t{op} -> {ev, type(ev)}')
                 
                 # eval operand
                 try:
                     arg = eval(op, {'__builtins__': {}}, eval_ns)
                 except Exception as err:
+                    # this may be an expression of type:
+                    # [label + address], which the original code couldn't handle
+                    # because at this point, the labels in `eval_ns` merely strings (why tho??)
+                    # so, deal with it somehow...
+                    #
+                    # if this stuff gets parsed as a list, it goes on into instruction.Instruction.__init__
+                    # if one of the arguments is a list, it's converted to pointer.Pointer
                     raise type(err)('Error parsing operand "%s" on assembly line'
                                     ' %d:\n    %s' % (op, lineno, str(err)))
                 
@@ -106,6 +153,9 @@ def parse_asm(asm, namespace=None):
                     arg = getattr(pointer, ptype)(arg)
                     
                 args.append(arg)
+
+            #if mnem == 'lea':
+                #print('\t', icls, args, list(map(type, args)))
         else:
             ops = ''
         
