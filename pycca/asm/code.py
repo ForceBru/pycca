@@ -8,11 +8,11 @@ class Code(object):
     Code instances can be compiled to a complete machine code string once all
     expression values can be determined.
     """
-    def __init__(self, code):
+    def __init__(self, code: bytes):
         self.code = code
         self.replacements = []
         
-    def replace(self, index, expr, packing):
+    def replace(self, index: int, expr: str, packing: str):
         """
         Add a new replacement starting at *index*. 
         
@@ -25,17 +25,18 @@ class Code(object):
     def __len__(self):
         return len(self.code)
     
-    def compile(self, symbols):
+    def compile(self, symbols) -> bytes:
         code = self.code
-        #print(f'replacements: "{self.replacements}"')
+        # print(f'replacements: "{self.replacements}"')
         for i, expr, packing in self.replacements:
             val = eval(expr, symbols)
-            #print(f'compile -> expr="{expr}" val="{val}" packing="{packing}"')
+            
             val = struct.pack(packing, val)
+            # print(f'compile -> expr="{expr}" val="{val}" packing="{packing}"')
             code = code[:i] + val + code[i+len(val):]
         return code
 
-    def __add__(self, x):
+    def __add__(self, x) -> 'Code':
         if isinstance(x, Code):
             code = Code(self.code + x.code)
             for index, expr, packing in self.replacements:
@@ -54,7 +55,7 @@ class Code(object):
         else:
             raise TypeError("Cannot add Code to type %s" % type(x))
 
-    def __radd__(self, x):
+    def __radd__(self, x) -> 'Code':
         if not isinstance(x, (bytes, bytearray)):
             raise TypeError("Cannot add Code to type %s" % type(x))
         prepend = bytes(x)

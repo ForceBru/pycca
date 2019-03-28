@@ -47,9 +47,8 @@ from .util import long
 """
 
 
-
 #   Register definitions
-#----------------------------------------
+# ----------------------------------------
 
 class Register(object):
     """General purpose register.
@@ -90,6 +89,11 @@ class Register(object):
             return x.__add__(self)
         elif isinstance(x, (int, long)):
             return Pointer(reg1=self, disp=x)
+        elif isinstance(x, str):
+            # Support adding labels to registers
+            # IT'S A TRAP! I mean, it's a label!
+            # print(f'asm.register.Register.__add__(x={x!r}) -> returning pointer with displacement')
+            return Pointer(reg1=self, disp=x)
         else:
             raise TypeError("Cannot add type %s to Register." % type(x))
 
@@ -129,8 +133,6 @@ class Register(object):
         if ARCH == 32 and self.name[0] == 'r':
             raise TypeError("Register %s not supported on 32 bit arch." % self.name)
         
-
-
 
 # note: see codeproject link for more comprehensive set of x86-64 registers
 al = Register(0b000, 'al', 8)  # 8-bit registers (low-byte)

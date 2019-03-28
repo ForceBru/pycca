@@ -1,6 +1,8 @@
 import re
 from . import instructions, register, pointer
-from .instruction import Label, Instruction
+from .instruction import Label  #, Instruction
+
+from .label import Asciz, Long, Ascii
 
 
 # Collect all registers in a single namespace for evaluating operands.
@@ -11,24 +13,27 @@ for name in dir(register):
         _eval_ns[name] = obj
       
 commands = {
-    '.byte': lambda *op: bytes(map(int, op)),
-    '.p2align': lambda a, b=None, c=None: bytes([int(b, 16)] * int(a)),
-    '.asciz': lambda op: bytes(eval(op), 'ascii') + b'\0'
+    # '.byte': lambda *op: bytes(map(int, op)),
+    # '.p2align': lambda a, b=None, c=None: bytes([int(b, 16)] * int(a)),
+    '.asciz': lambda *op: Asciz(op),
+    '.long': lambda *op: Long(op),
+    '.ascii': lambda *op: Ascii(op)
 }
 
+
 def process_command(match):
-  cmd, args = match.groups()
-  cmd = cmd.strip()
-  args = args.strip() if args else None
+    cmd, args = match.groups()
+    cmd = cmd.strip()
+    args = args.strip() if args else None
   
-  try:
-    result = commands[cmd](*args.split(','))
-    #print(f'\tGot assembler command: {cmd}({args.split(",")}) => {result}')
-  except KeyError:
-    result = b''
-    #print(f'[WARN] command "{cmd}" not supported')
-  
-  return result
+    try:
+        result = commands[cmd](*args.split(','))
+        print(f'\tGot assembler command: {cmd}{args.split(",")} => {result}')
+    except KeyError:
+        result = b''
+        print(f'[WARN] command "{cmd}" not supported')
+
+    return result
 
 
 def parse_asm(asm, namespace=None):
@@ -57,10 +62,16 @@ def parse_asm(asm, namespace=None):
         
         # Split line into "label: instr"
         a, part, b = line.partition(':')
+        
+        if ' ' in a or '"' in a: # there might be a colon in a constant!
+            a += part + b
+            part = ''
+            
         if part == '':
             line = a
         else:
             # create label if needed
+            a = a.replace('.', '_')
             m = re.match(r'\s*([a-zA-Z_][a-zA-Z0-9_]*)', a)
             if m is None:
                 raise SyntaxError('Expected label name before ":" on assembly '
@@ -79,8 +90,6 @@ def parse_asm(asm, namespace=None):
             continue
 
         clean.append((lineno, line, origline))
-
-    #print(clean)
         
     # second pass: generate instructions
     for line in clean:
@@ -96,15 +105,18 @@ def parse_asm(asm, namespace=None):
             m2 = re.match(r'(\.[a-zA-Z_][a-zA-Z0-9_]*)([ \t].*)?$', line)
             
             if m2 is not None:
-              data = process_command(m2)
-              code.append(data)
-              continue
+                data = process_command(m2)
+                code.append(data)
+                continue
             
             raise SyntaxError('Expected instruction mnemonic or assembler command on assembly line %d:'
                               ' "%s"' % (lineno, origline))
         
         mnem, ops = m.groups()
         mnem = mnem.strip()
+        
+        if mnem in ('or', 'and'):
+            mnem += '_'
         
         # Get instruction class
         try:
@@ -117,25 +129,34 @@ def parse_asm(asm, namespace=None):
         args = []
         if ops is not None:
             ops = ops.split(',')
-            #if mnem == 'lea':
-                #print(f'{mnem} {ops}')
+            
             for j, op in enumerate(ops):
                 op = op.strip()
                 
                 # parse pointer size
                 m = re.match(r'((byte|word|dword|qword)\s+ptr )?(.*)', op)
                 _, ptype, op = m.groups()
+                
+                # parse `offset`
+                try:
+                    left, op = op.split('offset')
+                except ValueError:  # no `offset` found
+                    left, op = '', op
+                
+                if left.strip():
+                    raise SyntaxError(f'Error parsing operand "{op}" on assembly line {lineno}:\n    Unknown??')
+                
+                op = op.replace('.', '_')
 
+                # TODO: Why do we need this?
                 try:
                     ev = eval_ns[op]
                 except KeyError:
                     ev = op
-
-                #if mnem == 'lea':
-                    #print(f'\t{op} -> {ev, type(ev)}')
                 
                 # eval operand
                 try:
+                    # print('asm.parser.parse_asm: op:', op)
                     arg = eval(op, {'__builtins__': {}}, eval_ns)
                 except Exception as err:
                     # this may be an expression of type:
@@ -153,12 +174,10 @@ def parse_asm(asm, namespace=None):
                     arg = getattr(pointer, ptype)(arg)
                     
                 args.append(arg)
-
-            #if mnem == 'lea':
-                #print('\t', icls, args, list(map(type, args)))
         else:
             ops = ''
         
+        # print('instr:', mnem, args)
         # Create instruction
         try:
             inst = icls(*args)

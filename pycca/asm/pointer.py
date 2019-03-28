@@ -267,13 +267,19 @@ class Pointer(object):
             if reg1 is not None or reg2 is not None or scale is not None:
                 raise TypeError("Pointer with label may only include displacement.")
         
-        if not isinstance(reg1, (type(None), Register)):
+        allowed_types_reg = type(None), Register
+        allowed_types_const = type(None), int
+        allowed_types_disp = allowed_types_const + (str, )
+        
+        if not isinstance(reg1, allowed_types_reg):
             raise TypeError("Invalid register %s" % reg1)
-        if not isinstance(reg2, (type(None), Register)):
+        if not isinstance(reg2, allowed_types_reg):
             raise TypeError("Invalid register %s" % reg2)
-        if not isinstance(disp, (type(None), int)):
+            
+        if not isinstance(disp, allowed_types_disp):
             raise TypeError("Invalid displacement %r" % disp)
-        if not isinstance(scale, (type(None), int)):
+            
+        if not isinstance(scale, allowed_types_const):
             raise TypeError("Invalid scale %r" % scale)
         
         self.reg1 = reg1
@@ -385,10 +391,13 @@ class Pointer(object):
     def __str__(self):
         parts = []
         if self.disp is not None:
-            if self.disp < 0:
-                parts.append('-0x%x' % -self.disp)
+            if isinstance(self.disp, str):
+                parts.append(f'{self.disp}')
             else:
-                parts.append('0x%x' % self.disp)
+                if self.disp < 0:
+                    parts.append('-0x%x' % -self.disp)
+                else:
+                    parts.append('0x%x' % self.disp)
         if self.reg1 is not None:
             if self.scale is not None:
                 parts.append("%d*%s" % (self.scale, self.reg1.name))
@@ -405,7 +414,7 @@ class Pointer(object):
             pfx = {8: 'byte', 16: 'word', 32: 'dword', 64: 'qword'}[self._bits]
             return pfx + ' ptr ' + ptr
 
-    def modrm_sib(self, reg=None):
+    def modrm_sib(self, reg=None) -> (bytes, bytes):
         """Generate a string consisting of mod_reg_r/m byte, optional SIB byte,
         and optional displacement bytes.
         
@@ -450,7 +459,15 @@ class Pointer(object):
             disp = b''
             mod = 'ind'
         else:
-            disp = pack_int(self.disp, try_uint=True, int8=True, int16=False, int32=True, int64=False)
+            #TODO: this is probably buggy. More checks needed!
+            if not isinstance(self.disp, str):
+                disp = pack_int(self.disp, try_uint=True, int8=True, int16=False, int32=True, int64=False)
+            else:
+                sz = self.reg1.bits if self.reg1 is not None else self.reg2.bits
+                sz //= 8
+                op_pack = {1: 'b', 2: 'h', 4: 'i'}[sz]
+                disp = Code(b'\0' * sz)
+                disp.replace(0, self.disp, op_pack)
                 
             mod = {1: 'ind8', 4: 'ind32'}[len(disp)]
 
@@ -567,9 +584,12 @@ class Pointer(object):
             srex, sib = mk_sib(byts, offset, base)            
             return mrex|srex, modrm + sib + disp
                 
-    def modrm16(self, reg):
+    def modrm16(self, reg) -> (int, bytes):
         """Generate 16-bit modrm 
         """
+        if isinstance(self.disp, str):
+            raise TypeError(f'asm.pointer.Pointer.modrm16(reg={reg}): label displacement ({self.disp!r}) not supported yet.')
+            
         if self.scale not in (0, None):
             raise TypeError("Scale not valid in 16-bit addressing mode.")
         

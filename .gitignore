@@ -2,4 +2,4 @@
 build
 docs/_build
 pyca/asm/gnu_as_cache.pk
-
+.idea

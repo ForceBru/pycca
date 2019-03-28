@@ -25,7 +25,7 @@ class Instruction(object):
         self.args = []
         for arg in args:
             if isinstance(arg, list):
-                #print(f"\tinstruction.Instruction.__init__() -> about to create a fucking pointer")
+                # print(f"\tinstruction.Instruction.__init__() -> about to create a pointer")
                 arg = Pointer(arg)
             #elif isinstance(arg, str):
                 #try:
@@ -170,14 +170,15 @@ class Instruction(object):
         else:
             raise TypeError("Unsupported type '%s' for Instruction.__eq__" % 
                             type(code))
-        
+     
+    # TODO: return a tuple OF TUPLES (many possible variants), not a single tuple
     def read_signature(self):
         """Determine signature of argument types.
         
         This method may be overridden by subclasses.
-        
-        Sets self._sig to a tuple of strings like 'r32', 'r/m64', and 'imm8'
-        Sets self._clean_args to a tuple of arguments that have been processed:
+
+        Sets `self._sig` to a tuple of tuples, where each tuple represents possible signatures (like 'r32', 'r/m64', and 'imm8') for _one_ argument.
+        Sets `self._clean_args` to a tuple of arguments that have been processed:
         
             * lists are converted to Pointer
             * ints are converted to packed string
@@ -185,24 +186,31 @@ class Instruction(object):
         sig = []
         clean_args = []
         for arg in self.args:
-            #if isinstance(arg, Label):
-                #arg = arg.__add__(0)
-
             if isinstance(arg, Register):
                 arg.check_arch()
                 if arg.name.startswith('xmm'):
-                    sig.append('xmm')
+                    sig.append(('xmm', ))
                 elif arg.name.startswith('st('):
-                    sig.append(arg.name)
+                    sig.append((arg.name, ))
                 else:
-                    sig.append('r%d' % arg.bits)
+                    # Handle a concrete register.
+                    # Some instructions may have specific opcodes for this particular register as argument.
+                    _sig = []
+                    if arg.name == 'cl':
+                        _sig.append('CL')
+                    _sig.append('r%d' % arg.bits)
+                    sig.append(tuple(_sig))
             elif isinstance(arg, Pointer):
                 arg.check_arch()
                 if arg.bits is None:
-                    sig.append('m')
+                    sig.append(('m', ))
                 else:
-                    sig.append('m%d' % arg.bits)
+                    sig.append(('m%d' % arg.bits, ))
             elif isinstance(arg, (int, long)):
+                _sig = []
+                if arg == 1:
+                    _sig.append(str(arg))
+                    
                 imm = pack_int(arg, int8=True)
                 bits = 8*len(imm)
                 # See if it's possible to pack smaller as uint.
@@ -216,18 +224,20 @@ class Instruction(object):
                     # the 'u' flag is a hint that the imm can be packed 
                     # smaller using uint. This will only be used if no modes
                     # support a larger imm.
-                    sig.append('imm%du' % bits)                
+                    _sig.append('imm%du' % bits)                
                 else:
-                    sig.append('imm%d' % bits)
+                    _sig.append('imm%d' % bits)
+                sig.append(tuple(_sig))
             elif isinstance(arg, (str, bytes, bytearray)):
                 if len(arg) in (1, 2, 4, 8):
-                    sig.append('imm%d' % (len(arg)*8))
+                    sig.append(('imm%d' % (len(arg)*8), ))
                 else:
                     raise TypeError("Invalid immediate operand length: %d" % 
                                     len(arg))
             else:
                 raise TypeError("Invalid argument type %s." % type(arg))
             clean_args.append(arg)
+        # print('SIG:', sig)
         self._sig = tuple(sig)
         self._clean_args = tuple(clean_args)
 
@@ -239,62 +249,75 @@ class Instruction(object):
         Sets self.mode to the instruction mode selected.
         """
         modes = self.modes
-        sig = self.sig
+        sigs__ = self.sig
         
         # filter out modes not supported by this arch
         archind = 2 if ARCH == 64 else 3
         modes = collections.OrderedDict([sm for sm in list(modes.items()) if sm[1][archind]])
         
-        #print "Select instruction mode for sig:", sig
-        #print "Available modes:", modes
-        orig_sig = sig
-        if sig in modes:
-            self._use_sig = sig
-            self._mode = modes[sig]
-            return
+        orig_sig = sigs__
         
-        # Check each instruction mode one at a time to see whether it is compatible
-        # with supplied arguments.
+        #print("Select instruction mode for sig:", sig)
+        #print "Available modes:", modes
+
         backup_mode = None
-        for mode in modes:
-            if len(mode) != len(sig):
-                continue
-            usemode = True
-            for i in range(len(mode)):
-                check = self.check_mode(sig[i], mode[i])
-                if check is True:
-                    # ok; check next arg
-                    continue
-                elif check is False:
-                    # not encodable; check next mode
-                    usemode = False
-                    break
-                elif isinstance(check, int):
-                    # ok, but would prefer another mode if possible
-                    if isinstance(usemode, int):
-                        usemode = min(usemode, check)
-                    else:
-                        usemode = check
-                    continue
-                else:
-                    raise RuntimeError("Invalid return type from check_mode().")
-            if usemode is True:
-                self._use_sig = mode
-                self._mode = modes[mode]
+
+        from itertools import product
+        for sig in product(*sigs__):
+            # Iterate over all possible permutations of the arguments' modes:
+            #   sigs__ = (('CL', 'r32'), ('1', 'imm8'))
+            #   => ('CL', '1'), ('CL', 'imm8'), ('r32', '1'), ('r32', 'imm8')
+            
+            if sig in modes:
+                self._use_sig = sig
+                self._mode = modes[sig]
                 return
-            elif usemode is not False:
-                if backup_mode is None or backup_mode[0] < usemode:
-                    backup_mode = (usemode, mode)
+            
+            # Check each instruction mode one at a time to see whether it is compatible
+            # with supplied arguments.
+            for mode in modes:       
+                if len(mode) != len(sig):
+                    continue
+                usemode = True
+                for i in range(len(mode)):
+                    check = self.check_mode(sig[i], mode[i])
+                    if check is True:
+                        # ok; check next arg
+                        continue
+                    elif check is False:
+                        # not encodable; check next mode
+                        usemode = False
+                        break
+                    elif isinstance(check, int):
+                        # ok, but would prefer another mode if possible
+                        if isinstance(usemode, int):
+                            usemode = min(usemode, check)
+                        else:
+                            usemode = check
+                        continue
+                    elif check is None:
+                        # signatures '1', 'CL' failed
+                        # This mode is incompatible. What do we do? Just go check the next?
+                        # TODO: clarify this
+                        usemode = False
+                        break
+                    else:
+                        raise RuntimeError("Invalid return type from check_mode().")
+                if usemode is True:
+                    self._use_sig = mode
+                    self._mode = modes[mode]
+                    return
+                elif usemode is not False:
+                    if backup_mode is None or backup_mode[0] < usemode:
+                        backup_mode = (usemode, mode)
         
         # Didn't find any definite hits, see if a backup mode is available.
         if backup_mode is not None:
             self._use_sig = backup_mode[1]
             self._mode = modes[backup_mode[1]]
             return
-            
-            
-        raise TypeError('Argument types not accepted for instruction %s: %s' 
-                        % (self.name, str(orig_sig)))
+
+        raise TypeError(f'Argument types not accepted for instruction {self.name}: {orig_sig}')
 
     def check_mode(self, sig, mode):
         """Return True if an argument of type *sig* may be used to satisfy
@@ -308,6 +331,13 @@ class Instruction(object):
         
         
         """
+        # print(f'checking: {sig!r} ?= {mode!r}')
+        # TODO: this is hacky
+        if sig == mode == 'CL':
+            return True
+        elif sig == mode == '1':
+            return True
+            
         sbits = sig.lstrip('irel/xm')
         stype = sig[:-len(sbits)] if len(sbits) > 0 else sig
         sbits = sbits.rstrip('u')
@@ -356,7 +386,9 @@ class Instruction(object):
             return sig.startswith('st(')
         elif mode.lower() == 'st(0)':
             return mode == sig
-        raise Exception("Invalid operand type '%s'" % mtype)
+            
+        return
+        # raise Exception("Invalid operand type '%s'" % mtype)
 
     def generate_instruction_parts(self):
         """Generate bytecode strings for each piece of the instruction.
@@ -410,6 +442,7 @@ class Instruction(object):
         # encode ModR/M and SIB bytes
         operands = []
         if modrm_rm is not None:
+            #print('instruction.generate_instruction_parts ModRM:', modrm_reg, modrm_rm)
             modrm = ModRmSib(modrm_reg, modrm_rm)
             operands.append(modrm.code)
             rex_byt |= modrm.rex
@@ -520,12 +553,15 @@ class Instruction(object):
                 
                 # pad with 0 if the operand is too small
                 imm = arg + b'\0'*((immsize-opsize)//8)
+            elif enc in ('1', 'CL'):
+                # do nothing: the presence of these is encoded in the opcode already
+                ...
             else:
                 raise RuntimeError("Invalid operand encoding: %s" % enc)
         
         # GAS prefers 67 before 66
         prefixes.sort(reverse=True)
-        return (prefixes, rex_byt, opcode_reg, reg, rm, imm)
+        return prefixes, rex_byt, opcode_reg, reg, rm, imm
         
 
 
@@ -548,7 +584,7 @@ class RelBranchInstruction(Instruction):
             
             # Generate relative call to label / offset
             self._label = addr
-            self._sig = ('rel32',)
+            self._sig = (('rel32',), )
             self._clean_args = [struct.pack('i', 0)]
         else:
             Instruction.read_signature(self)
@@ -582,7 +618,7 @@ class RelBranchInstruction(Instruction):
                 # the label is resolved.
                 code = Code(code)
                 code.replace(addr_offset, "%s - next_instr_addr" % self._label, op_pack)
-                self._code = code
+                self._code = code # This has unresolved labels!
             elif isinstance(self._label, (int, long)):
                 # Adjust offset to account for size of instruction
                 offset = struct.pack(op_pack, self._label - len(code))

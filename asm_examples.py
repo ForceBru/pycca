@@ -19,7 +19,7 @@ fn = mkfunction([
 fn.restype = ctypes.c_uint32
 
 # Call! Hopefully we get 0xdeadbeef back.
-print("Return: 0x%x" % fn())
+#print("Return: 0x%x" % fn())
 
 
 print("""

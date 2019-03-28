@@ -7,6 +7,9 @@ from .instruction import Instruction, RelBranchInstruction
 from .instructions_new import *
 
 
+actual_int = int
+
+
 #   Procedure management instructions
 #----------------------------------------
 
@@ -152,7 +155,7 @@ class call(RelBranchInstruction):
     
     # generate absolute call
     modes = {
-        #('rel16',): ['e8', 'm', False, True],
+        ('rel16',): ['e8', 'm', False, True],
         ('rel32',): ['e8', 'i', True, True],
         ('r/m16',): ['ff /2', 'm', False, True],
         ('r/m32',): ['ff /2', 'm', False, True],
@@ -224,7 +227,51 @@ class mov(Instruction):
     }
 
     def __init__(self, dst, src):  # set method signature
-        Instruction.__init__(self, dst, src)
+        super().__init__(dst, src)
+        
+        self._label = src if isinstance(src, str) else None      
+    
+    def read_signature(self):
+        """
+        Patched to be able to `mov` labels into memory.
+        """
+        
+        if self._label is not None:
+            self.args = (self.args[0], )
+            super().read_signature()
+            
+            self.args += (self._label, )
+            self._sig += (('imm32', ), )
+            #self._sig += ('imm32', )
+            self._clean_args += (0, ) # PLACEHOLDER!
+        else:
+            super().read_signature()
+            
+    def generate_code(self):
+        if self._label is None:
+            return super().generate_code()
+            
+        prefixes = self.prefixes
+        rex_byte = self.rex_byte
+        opcode = self.opcode
+        operands = self.operands
+        
+        code = b''.join(prefixes) + rex_byte + opcode
+                    
+        # get the location and size of the ABSOLUTE operand in the instruction
+        if len(operands) == 2:
+            code += operands[0]
+            
+        addr_offset = len(code)
+        #op_size = actual_int(self.use_sig[1][-2:]) // 8
+        code += operands[-1]
+        
+        #print('code, length, operands:', code, len(code), operands)
+        
+        from .code import Code    
+        code = Code(code)
+        code.replace(addr_offset, f"{self._label}", 'i') # absolute address!
+        self._code = code # This has unresolved labels!
 
 
 class movsd(Instruction):
@@ -1602,17 +1649,17 @@ def _jcc(name, opcodes, doc):
                                                 '__doc__': doc + d}) 
 
 
-ja   = _jcc('ja',   '0f87', """Jump near if above (CF=0 and ZF=0).""")
+ja   = _jcc('ja',   ['77', '0f87'], """Jump near if above (CF=0 and ZF=0).""")
 jae  = _jcc('jae',  '0f83', """Jump near if above or equal (CF=0).""")
-jb   = _jcc('jb',   ['72', '0f82', '0f82'], """Jump near if below (CF=1).""")
-jbe  = _jcc('jbe',  '0f86', """Jump near if below or equal (CF=1 or ZF=1).""")
+jb   = _jcc('jb',   ['72', '0f82'], """Jump near if below (CF=1).""")
+jbe  = _jcc('jbe',  ['76', '0f86'], """Jump near if below or equal (CF=1 or ZF=1).""")
 jc   = _jcc('jc',   '0f82', """Jump near if carry (CF=1).""")
 je   = _jcc('je',   ['74', '0f84'], """Jump near if equal (ZF=1).""")
 jz   = _jcc('jz',   '0f84', """Jump near if 0 (ZF=1).""")
 jg   = _jcc('jg',   '0f8f', """Jump near if greater (ZF=0 and SF=OF).""")
-jge  = _jcc('jge',  '0f8d', """Jump near if greater or equal (SF=OF).""")
+jge  = _jcc('jge',  ['7d','0f8d'], """Jump near if greater or equal (SF=OF).""")
 jl   = _jcc('jl',   ['7c', '0f8c'], """Jump near if less (SF≠ OF).""")
-jle  = _jcc('jle',  '0f8e', """Jump near if less or equal (ZF=1 or SF≠ OF).""")
+jle  = _jcc('jle',  ['7e', '0f8e'], """Jump near if less or equal (ZF=1 or SF≠ OF).""")
 jna  = _jcc('jna',  '0f86', """Jump near if not above (CF=1 or ZF=1).""")
 jnae = _jcc('jnae', '0f82', """Jump near if not above or equal (CF=1).""")
 jnb  = _jcc('jnb',  '0f83', """Jump near if not below (CF=0).""")
@@ -1639,7 +1686,7 @@ js   = _jcc('js',   '0f88', """Jump near if sign (SF=1).""")
 #----------------------------------------
 
 
-class int_(Instruction):
+class int(Instruction):
     """The INT n instruction generates a call to the interrupt or exception 
     handler specified with the destination operand. The destination operand 
     specifies a vector from 0 to 255, encoded as an 8-bit unsigned intermediate

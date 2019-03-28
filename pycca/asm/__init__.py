@@ -50,11 +50,11 @@ if sys.maxsize > 2**32:
 else:
     ARCH = 32
     
-ARCH = 32
+ARCH = 32  # PyVM only supports 32-bit code
 
 from .instructions import *
 from .register import *
 from .pointer import byte, word, dword, qword
-from .codepage import CodePage, mkfunction
+from .codepage import CodePage
 from .label import label
 from .util import *

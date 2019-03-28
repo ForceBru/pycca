@@ -1,3 +1,4 @@
+from .code import Code
 
 def label(name):
     """
@@ -39,6 +40,108 @@ class Label(object):
         
     def __eq__(self, x):
         return x.name == self.name
+
+
+class Const:
+    def __init__(self):
+        self._code = None
+        self._len = None
+        
+    def __len__(self):
+        if self._len is None:
+            self._len = len(self.code)
+        return self._len
+        
+    @property
+    def code(self):
+        if self._code is None:
+            self._code = self.compile()
+        return self._code
+        
+    def compile(self, symbols=None) -> bytes:
+        return b''
+
+
+class Long(Const):
+    """
+    `.long` directive.
+    
+    Usage:
+        .long 1, 2, Label_3
+        
+    Integers are stored as 4-byte numbers, labels are put into `Code` objects.
+    """
+    def __init__(self, data: list):
+        super().__init__()
+        
+        self.data = [x.strip().replace('.', '_') for x in data]
+        
+        self._code = None
+        self._len = len(data) * 4
+        
+    def __len__(self):
+        return self._len
+        
+    def __str__(self):
+        return '.long ' + ', '.join(self.data)
+        
+    def compile(self) -> Code:
+        unresolved = []
+        for entry in self.data:
+            try:
+                code = int(entry).to_bytes(4, 'little')
+            except ValueError:
+                code = Code(b'\0' * 4)
+                # load absolute address
+                code.replace(0, f"{entry}", 'i')
+                unresolved.append(code)
+            else:
+                unresolved.append(Code(code))
+                
+        self._code = sum(unresolved, Code(b''))
+        
+        return self._code
+
+
+class Asciz(Const):
+    """
+    `.asciz` directive.
+    
+    Usage:
+        .asciz "string", 10, 0
+    Integers are converted to bytes, strings are encoded as ASCII.
+    """
+    def __init__(self, data: list):
+        super().__init__()
+        self.data = tuple(x.strip() for x in data) + ('0', ) # zero signifies null byte
+        self._len = None
+        self._code = None
+        
+    def __len___(self):
+        if self._len is None:
+            self._len = sum(map(len, self.data))
+        return self._len
+        
+    def __str__(self):
+        return '.ascii ' + ', '.join(self.data)
+        
+    def compile(self) -> bytes:
+        ret = b''
+        for d in self.data:
+            if d[0] == '"': # it's a string
+                ret += d[1:-1].encode('ascii')
+            else:
+                ret += bytes([int(d)])
+        return ret
+        
+    def __eq__(self, x):
+        return x.data == self.data
+        
+        
+class Ascii(Asciz):
+    def __init__(self, data: list):
+        super().__init__(data)
+        self.data = self.data[:-1] # strip zero
 
 #class LabelOffset(object):
     #"""References a location in a CodePage that is marked by a label, plus a
