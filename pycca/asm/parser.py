@@ -24,11 +24,14 @@ commands = {
 def process_command(match):
     cmd, args = match.groups()
     cmd = cmd.strip()
-    args = args.strip() if args else None
+    args = args.strip().encode().decode('unicode_escape') if args else None
+
+    args_list = re.match(r'^(?:(?:("[^"]+")|(\d+)|([a-zA-Z0-9_.]+)),\s*)*(?:(?:("[^"]+")|(\d+)|([a-zA-Z0-9_.]+))\s*)$', args).groups()
+    args_list = list(filter(None, args_list))
   
     try:
-        result = commands[cmd](*args.split(','))
-        print(f'\tGot assembler command: {cmd}{args.split(",")} => {result}')
+        result = commands[cmd](*args_list)
+        # print(f'\tGot assembler command: {cmd}{args_list} => {result}')
     except KeyError:
         result = b''
         print(f'[WARN] command "{cmd}" not supported')
@@ -176,8 +179,7 @@ def parse_asm(asm, namespace=None):
                 args.append(arg)
         else:
             ops = ''
-        
-        # print('instr:', mnem, args)
+
         # Create instruction
         try:
             inst = icls(*args)

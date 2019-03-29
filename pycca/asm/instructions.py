@@ -7,9 +7,6 @@ from .instruction import Instruction, RelBranchInstruction
 from .instructions_new import *
 
 
-actual_int = int
-
-
 #   Procedure management instructions
 #----------------------------------------
 
@@ -38,7 +35,7 @@ class push(Instruction):
         ('r32',): ['50+rd', 'o', False, True],
         ('r64',): ['50+rd', 'o', True, False],
         ('imm8',): ['6a ib', 'i', True, True],
-        ('imm16',): ['68 iw', 'i', True, True],  # gnu as does not use this
+        # ('imm16',): ['68 iw', 'i', True, True],  # gnu as does not use this
         ('imm32',): ['68 id', 'i', True, True],
     }
         

@@ -116,6 +116,7 @@ class Asciz(Const):
         self.data = tuple(x.strip() for x in data) + ('0', ) # zero signifies null byte
         self._len = None
         self._code = None
+        self._stringified = None
         
     def __len___(self):
         if self._len is None:
@@ -123,7 +124,26 @@ class Asciz(Const):
         return self._len
         
     def __str__(self):
-        return '.ascii ' + ', '.join(self.data)
+        if self._stringified is None:
+            tmp_args = []
+            for arg in self.data:
+                tmp = ''
+                if arg.startswith('"'):  # it's a string
+                    for char in arg[1:-1]:  # strip quotes
+                        if char.isprintable():
+                            tmp += char
+                        else:
+                            if tmp:
+                                tmp_args.append(f'"{tmp}"')
+                            tmp_args.append(str(ord(char)))
+                            tmp = ''
+                    if tmp:
+                        tmp_args.append(f'"{tmp}"')
+                else:
+                    tmp_args.append(arg)
+            self._stringified = '.ascii ' + ', '.join(tmp_args)
+
+        return self._stringified
         
     def compile(self) -> bytes:
         ret = b''
